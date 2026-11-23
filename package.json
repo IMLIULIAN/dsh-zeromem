@@ -1,0 +1,58 @@
+{
+  "name": "@imliulian/dsh-zeromem",
+  "version": "0.1.0",
+  "description": "ZeroMem (零忆) local evidence-grounded memory system for DeepSeek Harness — single-file node:sqlite + CJK/EN FTS5 (<1ms recall), pre-write admission verification, credential redaction, until: expiry, SHA-256 lossless restore, local Ollama & OpenAI-compatible API support.",
+  "license": "AGPL-3.0-only",
+  "author": "IMLIULIAN (ZeroZoneX)",
+  "type": "module",
+  "main": "./lib/index.mjs",
+  "exports": {
+    ".": "./lib/index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "memory",
+    "zeromem",
+    "sqlite",
+    "fts5",
+    "ollama",
+    "local-ai"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IMLIULIAN/dsh-zeromem.git"
+  },
+  "homepage": "https://github.com/IMLIULIAN/dsh-zeromem#readme",
+  "bugs": {
+    "url": "https://github.com/IMLIULIAN/dsh-zeromem/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "check": "node --check assets/panel.js",
+    "test": "node --test tests/contracts_and_llm.test.mjs tests/dsh_plugin.test.mjs tests/store_and_expiry.test.mjs"
+  }
+}

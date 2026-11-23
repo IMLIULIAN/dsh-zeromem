@@ -1,0 +1,13 @@
+# DeepSeek Harness profile bundle patch for ZeroMem (零忆).
+#
+# Install via DSH CLI or DSH Plugin Market:
+#   dsh plugin --profile web add @imliulian/dsh-zeromem
+# Or local link during development:
+#   dsh plugin --profile <test-profile> add link:<absolute-path>
+#
+# To disable without uninstalling, add `disabled: true` under `id: zeromem` in
+# your profile's cordis.patch.yml.
+- insert:
+    - id: zeromem
+      name: "@imliulian/dsh-zeromem"
+      config: {}

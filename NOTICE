@@ -1,0 +1,17 @@
+ZeroMem (零忆) DSH Plugin — @imliulian/dsh-zeromem
+Copyright (C) 2026 IMLIULIAN (B站IM榴莲 / ZeroZoneX)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, version 3 of the License (AGPL-3.0-only).
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License (LICENSE) for more details.
+
+This plugin is the official DeepSeek Harness integration for ZeroMem
+(https://github.com/IMLIULIAN/zeromem), sharing its SQLite schema and
+evidence-grounded extraction/admission protocol. Companion local model
+weights Qwen3.5-4B-Memory-V2 (derived from Qwen/Qwen3.5-4B) are distributed
+separately under Apache-2.0.
