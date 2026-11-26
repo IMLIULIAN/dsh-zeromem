@@ -23,19 +23,25 @@
    - 每一条入库事实均**强制绑定原始证据片段**（`evidence_ids`），随时可回溯原文核对，避免摘要漂移与无中生有。
    - **离开本机前自动密钥脱敏**：常见密钥与凭据（`sk-...`、`ghp_...`、`AKIA...`、`Bearer ...` 等）在送往模型与写入数据库前自动替换为 `[REDACTED]`，切换云端 API 时同样受保护。
 
-3. **面向长周期演进的记忆治理机制**
+3. **面向长周期演进的时间线演化与记忆治理机制**
+   - **时间线演化与替代链（`fact_supersessions`）**：写前自动经 `<1ms` 同空间 FTS5 召回相关活跃旧事实（`prior_facts`），结合 Ollama JSON Schema 约束在单轮审校内安全标出 `supersedes_fact_id`；召回时活跃事实自动优先于被替代历史事实排序，同时完整保留历史可溯源链。
+   - **事件时间区间过滤（`occurred_from` / `occurred_to`）**：支持 `YYYY`、`YYYY-MM`、`YYYY-MM-DD` 区间重叠检索与 `include_superseded` 控制，覆盖引擎、`zeromem_recall` 工具、Web 工作台与 CLI。
    - **`until:YYYY-MM-DD` 过期自动后移**：严格日历校验临时规则/阶段性计划，过期记录无损后移至召回尾部并附带结构化过期标记，不污染当前有效记忆。
    - **`2–8` 动态相对分数门槛**：按头名相关性比值（默认 `0.35`，可开关）自动截断尾部低相关噪音，减少无效上下文占用。
-   - **无损软淘汰 + `SHA-256` 防篡改原子恢复**：删除的记忆连同原文片段与规范化 `SHA-256` 指纹一并归档至同库 `evicted_records` 边表；恢复时先做完整性校验，再原子写回并重建 FTS5 索引。
+   - **无损软淘汰 + `SHA-256` 防篡改原子恢复**：删除的记忆连同原文片段、替代链边与规范化 `SHA-256` 指纹一并归档至同库 `evicted_records` 边表；恢复时先做完整性校验，再原子写回并重建 FTS5 索引与演化边表。
 
-4. **本地模型 ↔ 云端 API 自由切换（无独显也能用）**
+4. **只读 Markdown 导出与 SQLite 在线安全备份（适配 Obsidian / Git / 网盘）**
+   - **100% 只读 Markdown 导出**（`dsh-zeromem export --md` / `GET /dsh-zeromem/api/export.md` / `exportMarkdown()`）：只读模式打开数据库（`PRAGMA query_only = ON`），零 LLM 调用，支持标准输出、单文件（`-o`）及按空间拆分的 Obsidian/Git 目录（`--dir`，附 `INDEX.md`），保留 YAML frontmatter、原文引用块、替代链与 `until:` 过期标注。
+   - **WAL 安全在线热备**（`dsh-zeromem backup` / `POST /dsh-zeromem/api/backup` / `backupDatabase()`）：直接调用 Node 内置 `node:sqlite` Online Backup API，不阻塞并发读写，自动将快照拍平为 `journal_mode = DELETE`（无 `-wal`/`-shm` 伴生文件，安全适配 OneDrive/百度网盘/iCloud），内置 `PRAGMA integrity_check` 与可选 `.sha256` 校验文件。
+
+5. **本地模型 ↔ 云端 API 自由切换（无独显也能用）**
    - **本地模型（Ollama，默认）**：回环地址直连 `127.0.0.1:11434`（自动绕过系统代理），自动检测本机 Ollama 与 `Qwen3.5-4B-Memory-V2`，支持按需一键拉取 `Q8_0` / `Q4_K_M` 版本（均带二次确认）。
    - **云端 / 自定义 OpenAI 兼容 API**：无需重启 DSH 实时切换，内置 DeepSeek / OpenAI / SiliconFlow / OpenRouter 预设，并支持持久化保存**自定义 API**（Base URL + Model ID，适配 vLLM、LM Studio 或私有网关）。API Key 仅保存在本机 `~/.zeromem/dsh-zeromem.json`（POSIX `0600`），绝不向浏览器回显明文。
 
-5. **DSH 原生闭环 & 跨工具数据库互通**
-   - **5 个原生 DSH 工具**（严格无损 JSON）：`zeromem_recall`、`zeromem_remember`、`zeromem_stats`、`zeromem_evict`、`zeromem_restore`。
+6. **DSH 原生闭环、命令行工具 & 跨工具数据库互通**
+   - **5 个原生 DSH 工具**（严格无损 JSON）：`zeromem_recall`（支持 `occurred_from` / `occurred_to` / `include_superseded`）、`zeromem_remember`（支持 `link_supersessions`）、`zeromem_stats`、`zeromem_evict`、`zeromem_restore`。
    - **会话生命周期自动闭环**（均支持热开关）：`agent/pre-step`（发消息前 `<1ms` 带防回环标记自动召回）与 `agent/turn-stopping`（每轮结束后后台异步沉淀，自动跳过 subagent）。
-   - **与 Python 版 ZeroMem 数据互通**：共用同一份 `~/.zeromem/memory.db`（`schema_version = 1`），与 [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) 在 DSH、Cursor、Claude Code、Codex 之间无缝共享同一套本地记忆库。
+   - **与 Python 版 ZeroMem 100% 数据互通**：共用同一份 `~/.zeromem/memory.db`（`schema_version = 1`，完整互通 `fact_supersessions` 与 `evicted_records`），与 [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) 在 DSH、Cursor、Claude Code、Codex 之间无缝共享同一套本地记忆库。
 
 ---
 
@@ -96,9 +102,26 @@ ollama pull hf.co/IMLIULIAN/qwen3.5-4b-memory-v2:Q4_K_M
 
 在本地记忆引擎之上，插件额外附带了一个轻量的 Shadow DOM 内嵌侧滑工作台（仅在带界面的 DSH Web / 桌面端注入，Headless 环境自动跳过，受本机回环 + 同源双层安全栅栏保护），方便可视化日常打理：
 
-- 快速检索、按空间筛选、点击记忆展开原始绑定证据、高亮查看 `[REDACTED]` 脱敏标记。
+- 快速检索、按空间或事件日期区间筛选、查看替代链徽章（`替代 #N` / `已被 #M 替代`）、点击记忆展开原始绑定证据、高亮查看 `[REDACTED]` 脱敏标记。
+- 一键**导出只读 Markdown（`.md`）**与**在线安全备份**（自动生成拍平 WAL 的单文件快照及 `.sha256` 至 `~/.zeromem/backups/`）。
 - 手动写入记忆、软淘汰至回收站、按批次预览与 `SHA-256` 校验一键恢复、一键清理已过期 `until:` 记忆。
 - 实时切换本地 Ollama / 云端 API、一键测试连接，附带亮/暗毛玻璃主题与自定义壁纸等轻量交互体验。
+
+---
+
+## 命令行工具（`dsh-zeromem`）
+
+```bash
+# 按事件时间区间检索并隐藏被替代的历史事实
+npx @imliulian/dsh-zeromem search "架构方案" --occurred-from 2026-01-01 --hide-superseded
+
+# 只读导出为单文件 Markdown 或 Obsidian/Git 分空间目录
+npx @imliulian/dsh-zeromem export --md -o ./zeromem.md
+npx @imliulian/dsh-zeromem export --md --dir ./obsidian-vault/zeromem
+
+# WAL 安全在线备份（拍平为无 -wal/-shm 单文件快照 + integrity_check + .sha256）
+npx @imliulian/dsh-zeromem backup ./backups/ --sha256
+```
 
 ---
 

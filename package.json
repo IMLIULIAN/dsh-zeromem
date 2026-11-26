@@ -1,17 +1,21 @@
 {
   "name": "@imliulian/dsh-zeromem",
-  "version": "0.1.0",
-  "description": "ZeroMem (零忆) local evidence-grounded memory system for DeepSeek Harness — single-file node:sqlite + CJK/EN FTS5 (<1ms recall), pre-write admission verification, credential redaction, until: expiry, SHA-256 lossless restore, local Ollama & OpenAI-compatible API support.",
+  "version": "0.2.0",
+  "description": "ZeroMem (零忆) local evidence-grounded memory system for DeepSeek Harness — single-file node:sqlite + CJK/EN FTS5 (<1ms recall), timeline supersession & date-range filtering, read-only Markdown export, SQLite Online Backup, pre-write admission verification, credential redaction, until: expiry, SHA-256 lossless restore, local Ollama & OpenAI-compatible API support.",
   "license": "AGPL-3.0-only",
   "author": "IMLIULIAN (ZeroZoneX)",
   "type": "module",
   "main": "./lib/index.mjs",
+  "bin": {
+    "dsh-zeromem": "bin/dsh-zeromem.mjs"
+  },
   "exports": {
     ".": "./lib/index.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
+    "bin",
     "lib",
     "assets",
     "cordis.patch.yml",
@@ -52,7 +56,7 @@
     }
   },
   "scripts": {
-    "check": "node --check assets/panel.js",
-    "test": "node --test tests/contracts_and_llm.test.mjs tests/dsh_plugin.test.mjs tests/store_and_expiry.test.mjs"
+    "check": "node --check assets/panel.js && node --check bin/dsh-zeromem.mjs",
+    "test": "node --test tests/contracts_and_llm.test.mjs tests/dsh_plugin.test.mjs tests/store_and_expiry.test.mjs tests/timeline_and_portability.test.mjs"
   }
 }

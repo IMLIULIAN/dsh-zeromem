@@ -23,19 +23,25 @@
    - Every stored fact remains **hard-bound to original evidence segments** (`evidence_ids`), eliminating black-box drift and allowing instant verification against the source text.
    - **Automatic Pre-Send Credential Redaction**: common secrets (`sk-...`, `ghp_...`, `AKIA...`, `Bearer ...`, etc.) are masked to `[REDACTED]` *before* extraction or storage — including when using external APIs.
 
-3. **Long-Horizon Memory Governance (Anti-Decay & Reversible)**
+3. **Long-Horizon Memory Governance & Timeline Evolution (Anti-Decay & Reversible)**
+   - **Timeline Evolution & Supersession Lineage (`fact_supersessions`)**: During pre-write admission, ZeroMem recalls relevant active facts in the same namespace via `<1ms` FTS5 and links replacements (`supersedes_fact_id` / `superseded_by`) using Ollama JSON Schema constraints—ranking active facts ahead of superseded history while keeping full auditability.
+   - **Event Time Interval Filtering (`occurred_from` / `occurred_to`)**: Filter memories by `YYYY`, `YYYY-MM`, or `YYYY-MM-DD` event windows (`occurred_from`, `occurred_to`, `include_superseded`) across the engine, `zeromem_recall` tool, Web workbench, and CLI.
    - **Time-Expiry Demotion (`until:YYYY-MM-DD`)**: expired temporary rules/plans are strictly calendar-validated and non-destructively demoted to the tail of search results instead of polluting active context.
    - **Adaptive `2–8` Relative-Score Gating**: dynamically trims low-relevance tail noise based on relative BM25 score ratio (`0.35`, toggleable).
-   - **Lossless Soft-Eviction & SHA-256 Tamper-Checked Restore**: deleting a memory archives its facts, segments, and canonical SHA-256 fingerprint into the `evicted_records` side table; restoring verifies integrity before atomically rebuilding FTS5 indexes.
+   - **Lossless Soft-Eviction & SHA-256 Tamper-Checked Restore**: deleting a memory archives its facts, segments, supersession edges, and canonical SHA-256 fingerprint into the `evicted_records` side table; restoring verifies integrity before atomically rebuilding FTS5 indexes and lineage edges.
 
-4. **Flexible Dual Backend (Local Ollama ↔ OpenAI-Compatible API)**
+4. **Read-Only Markdown Export & SQLite Online Safe Backup (Obsidian / Cloud-Drive Friendly)**
+   - **100% Read-Only Markdown Export** (`dsh-zeromem export --md` / `GET /dsh-zeromem/api/export.md` / `exportMarkdown()`): opens SQLite read-only (`PRAGMA query_only = ON`) with zero LLM calls, exporting to stdout, a single file (`-o`), or an Obsidian/Git per-namespace vault directory (`--dir` with `INDEX.md`) complete with YAML frontmatter, bound original evidence quotes, supersession links, and `until:` annotations.
+   - **WAL-Safe Online Backup** (`dsh-zeromem backup` / `POST /dsh-zeromem/api/backup` / `backupDatabase()`): uses Node's built-in `node:sqlite` Online Backup API to snapshot live WAL databases without locking writers, flattens snapshots to `journal_mode = DELETE` (zero `-wal`/`-shm` sidecars for OneDrive/iCloud/BaiduSyncdisk), verifies `PRAGMA integrity_check == ok`, and optionally writes `.sha256` checksums.
+
+5. **Flexible Dual Backend (Local Ollama ↔ OpenAI-Compatible API)**
    - **Local Ollama (Default)**: connects directly to `127.0.0.1:11434` (bypassing system proxy for loopback), auto-detects local Ollama / `Qwen3.5-4B-Memory-V2`, and supports one-click background model pulling (`Q8_0` / `Q4_K_M`) with confirmation.
    - **Cloud / Custom OpenAI-Compatible API**: switch live anytime without restarting DSH — built-in presets for DeepSeek, OpenAI, SiliconFlow, OpenRouter, plus persistent **Custom API** (Base URL + Model ID) for vLLM, LM Studio, or private gateways. API keys stay strictly local (`~/.zeromem/dsh-zeromem.json`, mode `0600`) and are never echoed to the browser.
 
-5. **Native DSH Integration & Cross-Tool Interop**
-   - **5 Native DSH Tools** (strict lossless JSON): `zeromem_recall`, `zeromem_remember`, `zeromem_stats`, `zeromem_evict`, `zeromem_restore`.
+6. **Native DSH Integration, CLI & Cross-Tool Interop**
+   - **5 Native DSH Tools** (strict lossless JSON): `zeromem_recall` (with `occurred_from` / `occurred_to` / `include_superseded`), `zeromem_remember` (with `link_supersessions`), `zeromem_stats`, `zeromem_evict`, `zeromem_restore`.
    - **Automatic Session Lifecycle Hooks** (live-toggleable): `agent/pre-step` (`<1ms` recall with anti-loop markers) and `agent/turn-stopping` (non-blocking background extraction, automatically skips subagents).
-   - **Shared Database with Python ZeroMem**: reads and writes the exact same `~/.zeromem/memory.db` (`schema_version = 1`) as [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem), sharing local memory seamlessly across DSH, Cursor, Claude Code, and Codex.
+   - **Shared Database with Python ZeroMem**: reads and writes the exact same `~/.zeromem/memory.db` (`schema_version = 1`, including `fact_supersessions` and `evicted_records`) as [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem), sharing local memory seamlessly across DSH, Cursor, Claude Code, and Codex.
 
 ---
 
@@ -95,9 +101,26 @@ Default config path: `~/.zeromem/dsh-zeromem.json` (`0600` on POSIX). Supports `
 
 As an optional convenience on top of the local memory engine, the plugin injects a lightweight Shadow DOM management panel in DSH Web and DSH Desktop (automatically skipped in headless profiles, protected by loopback + same-origin security fences):
 
-- Browse and search local facts, filter by namespace, expand bound original evidence, and inspect `[REDACTED]` highlights.
+- Browse and search local facts, filter by namespace or event date range (`occurred_from` / `occurred_to`), inspect supersession badges (`替代 #N` / `已被 #M 替代`), expand bound original evidence, and highlight `[REDACTED]` tokens.
+- One-click **Export Markdown** (read-only `.md` download) and **Online Backup** (WAL-flattened snapshot in `~/.zeromem/backups/` with `.sha256`).
 - Manually write facts, soft-evict outdated entries (with recycle bin preview & SHA-256 restore), and clear expired `until:` records.
 - Switch Local Ollama / Cloud API live, test connectivity, and optionally toggle light/dark frosted-glass styling or custom wallpaper.
+
+---
+
+## CLI (`dsh-zeromem`)
+
+```bash
+# Search with event time range & hide superseded historical facts
+npx @imliulian/dsh-zeromem search "database" --occurred-from 2026-01-01 --hide-superseded
+
+# Read-only Markdown export (single file or Obsidian/Git per-namespace directory)
+npx @imliulian/dsh-zeromem export --md -o ./zeromem.md
+npx @imliulian/dsh-zeromem export --md --dir ./obsidian-vault/zeromem
+
+# WAL-safe SQLite Online Backup (single file, journal_mode=DELETE, integrity_check=ok)
+npx @imliulian/dsh-zeromem backup ./backups/ --sha256
+```
 
 ---
 

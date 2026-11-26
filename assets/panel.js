@@ -50,6 +50,12 @@
       '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
     chevron:
       '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+    calendar:
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    fileMd:
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>',
+    backup:
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>',
   };
 
   const NOISE_URI =
@@ -671,6 +677,22 @@
       }
       .zm-tag.rev { background: var(--zm-rev-bg); color: var(--zm-rev-text); border-color: var(--zm-rev-border); }
       .zm-tag.exp { background: var(--zm-exp-bg); color: var(--zm-exp-text); border-color: var(--zm-exp-border); }
+      .zm-tag.sup-new { background: rgba(16, 185, 129, 0.12); color: #059669; border-color: rgba(16, 185, 129, 0.28); }
+      .zm-tag.sup-old { background: rgba(148, 163, 184, 0.16); color: var(--zm-muted); border-color: var(--zm-divider); text-decoration: line-through; }
+      .zm-card.sup-muted { opacity: 0.78; }
+      .zm-time-bar {
+        display: none; align-items: center; gap: 6px; flex-wrap: wrap;
+        padding: 7px 9px; border-radius: 12px; background: var(--zm-surface);
+        border: 1px solid var(--zm-surface-border);
+      }
+      .zm-time-bar.open { display: flex; }
+      .zm-date-in {
+        height: 28px; min-width: 108px; flex: 1 1 108px; padding: 0 8px;
+        border-radius: 8px; border: 1px solid var(--zm-input-border);
+        background: var(--zm-input-bg); color: var(--zm-text); font-size: 11.5px; outline: none;
+      }
+      .zm-date-in:focus { border-color: var(--zm-accent-border); }
+      .zm-icon-btn.active { border-color: var(--zm-accent-border); color: var(--zm-accent); }
 
       .zm-fact-text {
         font-size: 12.8px; line-height: 1.56; color: var(--zm-text); word-break: break-word; cursor: pointer;
@@ -985,6 +1007,18 @@
                 </button>
                 <div class="zm-ns-menu" id="zmNsMenu" role="listbox" aria-label="空间筛选"></div>
               </div>
+              <button class="zm-icon-btn square" id="zmTimeToggleBtn" type="button" aria-label="时间线筛选" title="按事件日期与替代链筛选">${ICONS.calendar}</button>
+              <button class="zm-icon-btn square" id="zmExportMdBtn" type="button" aria-label="导出 Markdown" title="只读导出 Markdown (.md)">${ICONS.fileMd}</button>
+              <button class="zm-icon-btn square" id="zmBackupBtn" type="button" aria-label="在线安全备份" title="SQLite 在线安全备份（无 WAL）">${ICONS.backup}</button>
+            </div>
+            <div class="zm-time-bar" id="zmTimeBar">
+              <input class="zm-date-in" id="zmFromDate" type="text" placeholder="起始 YYYY-MM-DD" aria-label="事件起始日期" title="事件起始日期（支持 YYYY / YYYY-MM / YYYY-MM-DD）" />
+              <input class="zm-date-in" id="zmToDate" type="text" placeholder="截止 YYYY-MM-DD" aria-label="事件截止日期" title="事件截止日期（支持 YYYY / YYYY-MM / YYYY-MM-DD）" />
+              <label class="zm-switch" style="padding:0 6px;" title="隐藏已被更新事实替代的历史记录">
+                <span>仅有效</span>
+                <input type="checkbox" id="zmHideSup" />
+              </label>
+              <button class="zm-icon-btn square" id="zmTimeClearBtn" type="button" aria-label="清空时间筛选" title="清空时间线筛选">${ICONS.close}</button>
             </div>
             <div class="zm-meta-row">
               <span id="zmSearchMeta">就绪</span>
@@ -2287,17 +2321,35 @@
     });
   }
 
-  async function loadMemories() {
+  function buildMemoryQueryParams({ includeLimit = true } = {}) {
     const q = $("zmSearchInput").value.trim();
     const ns = state.selectedNs;
-    const qs = new URLSearchParams({ q, limit: "50" });
+    const occurredFrom = $("zmFromDate")?.value.trim() || "";
+    const occurredTo = $("zmToDate")?.value.trim() || "";
+    const hideSup = Boolean($("zmHideSup")?.checked);
+    const qs = new URLSearchParams();
+    if (includeLimit) {
+      qs.set("q", q);
+      qs.set("limit", "50");
+    }
     if (ns) qs.set("ns", ns);
+    if (occurredFrom) qs.set("occurred_from", occurredFrom);
+    if (occurredTo) qs.set("occurred_to", occurredTo);
+    if (hideSup) qs.set("include_superseded", "0");
+    return { qs, q, hasFilter: Boolean(occurredFrom || occurredTo || hideSup) };
+  }
+
+  async function loadMemories() {
+    const { qs, q, hasFilter } = buildMemoryQueryParams({ includeLimit: true });
+    $("zmTimeToggleBtn")?.classList.toggle("active", hasFilter);
     try {
       const data = await api(`/memories?${qs.toString()}`);
       const list = $("zmList");
       $("zmSearchMeta").textContent = q
         ? `命中 ${data.count} 条 · ${data.elapsed_ms}ms`
-        : `最新 ${data.count} 条`;
+        : hasFilter
+          ? `筛选 ${data.count} 条 · ${data.elapsed_ms}ms`
+          : `最新 ${data.count} 条`;
 
       if (!data.items || !data.items.length) {
         list.innerHTML = '<div class="zm-empty">暂无匹配记忆<br/>点右上角「写入」或在对话中自然沉淀</div>';
@@ -2309,13 +2361,22 @@
           const evHtml = (item.evidence || [])
             .map((ev) => `<div class="zm-ev-item"><span class="zm-ev-id">${esc(ev.id)}</span>${highlightRedacted(ev.text)}</div>`)
             .join("");
+          const isSupOld = Array.isArray(item.superseded_by) && item.superseded_by.length > 0;
+          const occLabel = item.occurred_start
+            ? item.occurred_end && item.occurred_end !== item.occurred_start
+              ? `${item.occurred_start}~${item.occurred_end}`
+              : item.occurred_start
+            : "";
           return `
-            <article class="zm-card">
+            <article class="zm-card${isSupOld ? " sup-muted" : ""}">
               <div class="zm-card-top">
                 <div class="zm-tags">
                   <span class="zm-tag">#${item.fact_id}</span>
                   <span class="zm-tag">${esc(item.namespace)}</span>
+                  ${occLabel ? `<span class="zm-tag">${esc(occLabel)}</span>` : ""}
                   ${item.action === "revise" ? '<span class="zm-tag rev">已纠错</span>' : ""}
+                  ${item.supersedes_fact_id ? `<span class="zm-tag sup-new">替代 #${item.supersedes_fact_id}</span>` : ""}
+                  ${isSupOld ? `<span class="zm-tag sup-old">已被 ${item.superseded_by.map((x) => `#${x}`).join(",")} 替代</span>` : ""}
                   ${item.until_expiry ? `<span class="zm-tag exp">${esc(item.until_expiry.label)}</span>` : ""}
                 </div>
                 <button class="zm-icon-btn square danger zm-evict-btn" data-fid="${item.fact_id}" type="button" aria-label="移入回收站" title="软淘汰至回收站（可恢复）">${ICONS.trash}</button>
@@ -2786,6 +2847,51 @@
         await Promise.all([refreshStatus(true), loadRecycleBin()]);
       } catch (err) {
         showToast(`清理失败：${err.message}`, false);
+      }
+    });
+  });
+
+  $("zmTimeToggleBtn").addEventListener("click", () => {
+    $("zmTimeBar").classList.toggle("open");
+  });
+  for (const id of ["zmFromDate", "zmToDate"]) {
+    $(id).addEventListener("change", () => loadMemories());
+    $(id).addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loadMemories();
+    });
+  }
+  $("zmHideSup").addEventListener("change", () => loadMemories());
+  $("zmTimeClearBtn").addEventListener("click", () => {
+    $("zmFromDate").value = "";
+    $("zmToDate").value = "";
+    $("zmHideSup").checked = false;
+    loadMemories();
+  });
+  $("zmExportMdBtn").addEventListener("click", () => {
+    const { qs } = buildMemoryQueryParams({ includeLimit: false });
+    qs.set("download", "1");
+    const a = document.createElement("a");
+    a.href = `${API_BASE}/export.md?${qs.toString()}`;
+    a.download = "";
+    a.click();
+    showToast("已触发只读 Markdown 导出");
+  });
+  $("zmBackupBtn").addEventListener("click", async () => {
+    const btn = $("zmBackupBtn");
+    btn.disabled = true;
+    await withUiBusy("备份中", async () => {
+      try {
+        const res = await api("/backup", {
+          method: "POST",
+          body: JSON.stringify({ sha256: true, verify: true }),
+        });
+        const rc = res.receipt || {};
+        const name = String(rc.backup_path || "").split(/[\\/]/).pop() || "backup.db";
+        showToast(`已备份 ${name} (${formatBytes(rc.size_bytes)} · ${String(rc.sha256 || "").slice(0, 8)})`);
+      } catch (err) {
+        showToast(`备份失败：${err.message}`, false);
+      } finally {
+        btn.disabled = false;
       }
     });
   });

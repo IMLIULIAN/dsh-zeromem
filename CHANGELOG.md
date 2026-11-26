@@ -2,6 +2,16 @@
 
 All notable changes to `@imliulian/dsh-zeromem` will be documented in this file.
 
+## [0.2.0] - 2026-11-26
+
+### Added
+- **Timeline Evolution & Supersession Lineage (`fact_supersessions`)**: Full feature and SQLite schema parity with Python [ZeroMem](https://github.com/IMLIULIAN/zeromem) (`schema_version = 1`, `SCHEMA_SIG = 42e7ab99494de6a6b4e88eb2`, `APP_FORMAT_ID = 0x494D4C4C` unchanged). Before admission, same-namespace active facts are recalled via `<1ms` FTS5 as `prior_facts` with Ollama JSON Schema constraints (`supersedes_fact_id`) to link replacements without breaking existing records.
+- **Event Time Interval Filtering (`occurred_from` / `occurred_to` / `include_superseded`)**: Supports `YYYY`, `YYYY-MM`, and `YYYY-MM-DD` bounds with fail-closed validation across `SQLiteMemoryStore.search()`, `ZeroMemEngine.recall()`, `zeromem_recall` tool, `/dsh-zeromem/api/memories`, and the CLI; active facts automatically rank ahead of superseded history; `guardFact` adds conservative single-date grounding backfill without leaking record dates or `until:` tags.
+- **Read-Only Markdown Export (`exportMarkdown` / `dsh-zeromem export --md` / `GET /dsh-zeromem/api/export.md`)**: 100% read-only SQLite access (`readOnly: true` + `PRAGMA query_only = ON`), zero LLM calls, supporting stdout, single file (`-o`), or per-namespace Obsidian/Git directory (`--dir` with `INDEX.md`), preserving YAML frontmatter, bound original evidence quotes, supersession badges, and `until:` expiry labels.
+- **SQLite Online Safe Backup (`backupDatabase` / `dsh-zeromem backup` / `POST /dsh-zeromem/api/backup`)**: Powered by Node's built-in `node:sqlite` Online Backup API (`backup()`), safely snapshots live WAL databases, flattens snapshots to `journal_mode = DELETE` (zero `-wal`/`-shm` sidecars for OneDrive/BaiduSyncdisk/iCloud), verifies `PRAGMA integrity_check == ok`, and optionally writes `.sha256` checksum files.
+- **Lossless Soft-Eviction & Restore Lineage Parity**: `softEvict` / `restoreEvicted` now snapshot and restore `fact_supersessions` edges with canonical JSON SHA-256 parity across Python and Node runtimes.
+- **Zero-Dependency CLI & Workbench Controls**: Added `dsh-zeromem` CLI (`search` / `export` / `backup` / `stats`) and compact icon controls in the embedded Shadow DOM workbench for timeline date filtering, one-click Markdown export download, and one-click online snapshot backup.
+
 ## [0.1.0] - 2026-11-23
 
 ### Added
