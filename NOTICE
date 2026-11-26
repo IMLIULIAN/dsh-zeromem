@@ -15,3 +15,20 @@ This plugin is the official DeepSeek Harness integration for ZeroMem
 evidence-grounded extraction/admission protocol. Companion local model
 weights Qwen3.5-4B-Memory-V2 (derived from Qwen/Qwen3.5-4B) are distributed
 separately under Apache-2.0.
+
+Schema Lineage & Third-Party Ecosystem Compatibility:
+The structured fact-extraction and pre-write admission schema conventions shared
+with ZeroMem (including bank/namespace partitioning, fact types
+"world" / "experience" / "observation", temporal fields occurred_start /
+occurred_end / mentioned_at, and where / entities metadata) are inspired by and
+conceptually compatible with Vectorize Hindsight
+(https://github.com/vectorize-io/hindsight, MIT License). This plugin's
+node:sqlite dual-track FTS5 store, admission/guardrail pipeline, governance and
+lossless restore layer, and DSH integration are independent clean-room
+implementations containing no Hindsight source code.
+
+Name Disambiguation:
+ZeroMem (零忆) and @imliulian/dsh-zeromem (by IMLIULIAN / B站IM榴莲 / ZeroZoneX)
+are independent open-source local memory projects and are not affiliated with,
+derived from, or related to the academic paper "Zero-Mem: Zero-Token Memory
+Operations for LLM Agents" (Yilin Xiao et al., arXiv:2607.29377, July 2026).

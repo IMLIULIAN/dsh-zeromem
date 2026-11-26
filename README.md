@@ -108,6 +108,8 @@ npm run check
 npm test
 ```
 
-## License & Ecosystem
-- **GNU Affero General Public License v3.0 (`AGPL-3.0-only`)** — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Any redistributed modifications or network-accessible deployments derived from this plugin must remain open-source under AGPL-3.0 with original copyright notices preserved.
-- Companion projects: [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) · [Qwen3.5-4B-Memory-V2 (Hugging Face, separately Apache-2.0)](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)
+## License, Attribution & Disambiguation
+- **License**: **GNU Affero General Public License v3.0 (`AGPL-3.0-only`)** — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Any redistributed modifications or network-accessible deployments derived from this plugin must remain open-source under AGPL-3.0 with original copyright notices preserved.
+- **Author & Companion Projects**: **IMLIULIAN (B站IM榴莲)** · **ZeroZoneX** — [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) · [Qwen3.5-4B-Memory-V2 (Hugging Face, separately Apache-2.0)](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)
+- **Schema Lineage & Compatibility**: The fact schema conventions shared with ZeroMem (`bank`, `type: world | experience | observation`, `occurred_start` / `occurred_end` / `mentioned_at`, `where`, `entities`) are inspired by and conceptually compatible with [**Vectorize Hindsight**](https://github.com/vectorize-io/hindsight) (MIT License). This plugin's `node:sqlite` + dual-track FTS5 engine, pre-write admission guardrails, governance/restore layer, and DSH UI/hooks are independent implementations containing no Hindsight source code.
+- **Name Disambiguation**: **ZeroMem (零忆)** / `@imliulian/dsh-zeromem` is an independent local memory system and is **not** affiliated with or derived from the academic paper *Zero-Mem: Zero-Token Memory Operations for LLM Agents* (Yilin Xiao et al., [arXiv:2607.29377](https://arxiv.org/abs/2607.29377), July 2026).

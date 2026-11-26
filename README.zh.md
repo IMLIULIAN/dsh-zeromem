@@ -109,6 +109,8 @@ npm run check
 npm test
 ```
 
-## 许可与生态
-- 开源协议：**GNU Affero General Public License v3.0（`AGPL-3.0-only`）**，详见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。任何基于本插件的二次修改分发或网络服务部署均须以 AGPL-3.0 同等开源并保留原作者署名与版权声明。
-- 关联项目：[IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) · [Qwen3.5-4B-Memory-V2（Hugging Face，模型权重单独采用 Apache-2.0）](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)
+## 许可、血缘归属与同名消歧
+- **开源协议**：**GNU Affero General Public License v3.0（`AGPL-3.0-only`）**，详见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。任何基于本插件的二次修改分发或网络服务部署均须以 AGPL-3.0 同等开源并保留原作者署名与版权声明。
+- **作者与关联项目**：**B站IM榴莲（IMLIULIAN）** · **ZeroZoneX** — [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) · [Qwen3.5-4B-Memory-V2（Hugging Face，模型权重单独采用 Apache-2.0）](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)
+- **Schema 血缘与兼容致谢**：本插件与 ZeroMem 共用的结构化事实字段协议（`bank`、`type: world | experience | observation`、`occurred_start` / `occurred_end` / `mentioned_at`、`where`、`entities`）受开源项目 [**Vectorize Hindsight**](https://github.com/vectorize-io/hindsight)（MIT License）启发并保持概念/Schema 兼容；本插件基于 `node:sqlite` 的双轨 FTS5 引擎、写前审校守卫、过期/软淘汰与 SHA-256 恢复机制及 DSH 集成代码均为独立从零实现，不含 Hindsight 源码。
+- **同名论文消歧**：**ZeroMem（零忆）** 与 `@imliulian/dsh-zeromem` 是独立开发的纯本地记忆系统，与学术论文 *Zero-Mem: Zero-Token Memory Operations for LLM Agents*（Yilin Xiao et al., [arXiv:2607.29377](https://arxiv.org/abs/2607.29377), 2026 年 7 月）名称相近，但两者完全独立，无作者、代码、模型或隶属关系。
