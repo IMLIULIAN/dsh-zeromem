@@ -9,10 +9,14 @@ import { DatabaseSync } from "node:sqlite";
 
 import { ConfigManager } from "../lib/config.mjs";
 import {
-  FACT_ADMISSION_SUPERSEDE_ADDENDUM,
   FACT_ADMISSION_SYSTEM,
+  FACT_SUPERSESSION_SYSTEM,
+  deduplicateRecallEvidence,
   guardFact,
+  hasSupersessionCue,
+  isNoopRevision,
 } from "../lib/contracts.mjs";
+import { formatRecallInjection } from "../lib/hooks.mjs";
 import { apply, backupDatabase, exportMarkdown, ZeroMemEngine } from "../lib/index.mjs";
 import { APP_FORMAT_ID, SCHEMA_SIG, SQLiteMemoryStore, sha256Text } from "../lib/store.mjs";
 
@@ -156,14 +160,15 @@ test("prior_facts lookup, supersedes_fact_id lineage, schema constraint, and sof
     ],
   });
   const adm2 = JSON.stringify({
-    0: { decision: "pass", evidence: ["s0"], replacement: "", supersedes_fact_id: 1 },
-    1: { decision: "pass", evidence: ["s1"], replacement: "", supersedes_fact_id: 9999 },
+    0: { decision: "pass", evidence: ["s0"], replacement: "" },
+    1: { decision: "pass", evidence: ["s1"], replacement: "" },
   });
+  const sup2 = JSON.stringify({ 0: 1, 1: 9999 });
 
   const ext3 = JSON.stringify({
     facts: [
       {
-        text: "项目 A 演示环境使用方案 Z。",
+        text: "项目 A 演示环境从方案 X 切换至方案 Z。",
         type: "world",
         occurred_start: "2026-04-01",
         occurred_end: null,
@@ -178,7 +183,7 @@ test("prior_facts lookup, supersedes_fact_id lineage, schema constraint, and sof
   const dir = makeTempDir("zeromem_sup_");
   try {
     const dbPath = path.join(dir, "timeline.db");
-    const mock = new ScriptedLlm([ext1, adm1, ext2, adm2, ext3, adm3]);
+    const mock = new ScriptedLlm([ext1, adm1, ext2, adm2, sup2, ext3, adm3]);
     const cfgMgr = new ConfigManager({
       configPath: path.join(dir, "cfg.json"),
       initialOverrides: { dbPath },
@@ -193,6 +198,7 @@ test("prior_facts lookup, supersedes_fact_id lineage, schema constraint, and sof
     assert.equal(r1.superseded, 0);
     const oldFid = r1.fact_ids[0];
     // First admission on empty namespace keeps unmodified prompt and no schema
+    assert.equal(mock.calls.length, 2);
     assert.equal(mock.calls[1].systemPrompt, FACT_ADMISSION_SYSTEM);
     assert.equal("prior_facts" in mock.calls[1].userPayload, false);
     assert.equal(mock.calls[1].responseFormat, null);
@@ -205,19 +211,24 @@ test("prior_facts lookup, supersedes_fact_id lineage, schema constraint, and sof
     assert.equal(r2.superseded, 1);
     const [newFid, logFid] = r2.fact_ids;
 
-    // Second admission includes prior_facts, addendum prompt, and JSON Schema enum
-    assert.ok(mock.calls[3].systemPrompt.includes(FACT_ADMISSION_SUPERSEDE_ADDENDUM));
-    assert.ok(mock.calls[3].userPayload.prior_facts.some((pf) => pf.fact_id === oldFid));
-    assert.deepEqual(
-      mock.calls[3].responseFormat.properties["0"].properties.supersedes_fact_id.enum,
-      [null, oldFid]
-    );
+    // Doc 2 admission (call 3) stays 100% pure native contract (no prior_facts, no schema pollution)
+    assert.equal(mock.calls[3].systemPrompt, FACT_ADMISSION_SYSTEM);
+    assert.equal("prior_facts" in mock.calls[3].userPayload, false);
+    assert.equal(mock.calls[3].responseFormat, null);
+
+    // Separate gated supersession call (call 4) runs ONLY for slot "0" with schema enum [null, oldFid]
+    assert.equal(mock.calls[4].systemPrompt, FACT_SUPERSESSION_SYSTEM);
+    assert.deepEqual(Object.keys(mock.calls[4].userPayload.new_facts), ["0"]);
+    assert.ok(mock.calls[4].userPayload.prior_facts.some((pf) => pf.fact_id === oldFid));
+    assert.deepEqual(mock.calls[4].responseFormat.properties["0"].enum, [null, oldFid]);
     assert.equal(r2.facts[0].supersedes_fact_id, oldFid);
     assert.equal("supersedes_fact_id" in r2.facts[1], false);
 
-    // Cross-namespace isolation: proj-b admission sees no prior_facts from proj-a
-    await engine.remember("2026-04-01：项目 A 演示环境使用方案 Z。", { ns: "proj-b" });
-    assert.equal("prior_facts" in mock.calls[5].userPayload, false);
+    // Cross-namespace isolation: proj-b runs strictly 2 calls (no supersession call triggered)
+    await engine.remember("2026-04-01：项目 A 演示环境从方案 X 切换至方案 Z。", { ns: "proj-b" });
+    assert.equal(mock.calls.length, 7);
+    assert.equal(mock.calls[6].systemPrompt, FACT_ADMISSION_SYSTEM);
+    assert.equal("prior_facts" in mock.calls[6].userPayload, false);
 
     // Active fact ranks ahead of superseded historical fact
     const hits = engine.recall("项目 A 方案", { ns: "proj-a", adaptive: false, limit: 10 });
@@ -662,6 +673,91 @@ test("SQLite Online Backup flattens live WAL, verifies integrity, guards targets
     assert.ok(fs.existsSync(cliReceipt.backup_path));
     assert.equal(path.dirname(cliReceipt.backup_path), path.resolve(bdir));
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("noop revise interception, non-cue gating skip, and shared/verbatim recall evidence deduplication", async () => {
+  assert.equal(isNoopRevision("User authorized project v1.", "User authorized project v1."), true);
+  assert.equal(
+    isNoopRevision("User authorized project v1. | Involving: user", "user   authorized project v1."),
+    true
+  );
+  assert.equal(isNoopRevision("Pool limit is 500.", "Pool limit is 200."), false);
+  assert.equal(hasSupersessionCue("支付回调超时阈值正式调整为 15 秒。"), true);
+  assert.equal(hasSupersessionCue("运维团队每周日凌晨 03:00 执行冷备归档。"), false);
+
+  const dir = makeTempDir("zeromem_dedup_");
+  const prevCfg = process.env.ZEROMEM_DSH_CONFIG;
+  process.env.ZEROMEM_DSH_CONFIG = path.join(dir, "dsh-zeromem.json");
+  try {
+    const dbPath = path.join(dir, "gate_dedup.db");
+    const ext1 = JSON.stringify({
+      facts: [
+        { text: "User authorized project execution for version 1.0.0.", type: "world", entities: [], evidence: ["s0"] },
+        { text: "主库连接池上限 500。", type: "world", entities: ["主库"], evidence: ["s0"] },
+        { text: "只读副本连接池上限 500。", type: "world", entities: ["只读副本"], evidence: ["s0"] },
+        { text: "2026-03-01 记录：网关公开查询接口限流为每分钟 120 次。", type: "world", entities: ["网关"], evidence: ["s1"] },
+      ],
+    });
+    const adm1 = JSON.stringify({
+      0: {
+        decision: "revise",
+        evidence: ["s0"],
+        replacement: "User authorized project execution for version 1.0.0. | Involving: user",
+      },
+      1: { decision: "revise", evidence: ["s0"], replacement: "主库连接池上限 200。" },
+      2: { decision: "pass", evidence: ["s0"], replacement: "" },
+      3: { decision: "pass", evidence: ["s1"], replacement: "" },
+    });
+    const mock = new ScriptedLlm([ext1, adm1]);
+    const cfgMgr = new ConfigManager({
+      configPath: path.join(dir, "cfg.json"),
+      initialOverrides: { dbPath },
+    });
+    const engine = new ZeroMemEngine({ configManager: cfgMgr, llmFactory: () => mock });
+
+    const sharedSeg = "2026-03-05 数据库配置确认：主库连接池上限 200，只读副本连接池上限 500。";
+    const verbatimSeg = "2026-03-01 记录：网关公开查询接口限流为每分钟 120 次。";
+    const res = await engine.remember(`${sharedSeg}\n\n${verbatimSeg}`, { ns: "eng" });
+    // Strictly 2 LLM calls (extract + pure admit); no-op revise slot 0 intercepted as held
+    assert.equal(mock.calls.length, 2);
+    assert.equal(res.saved, 3);
+    assert.equal(res.revised, 1);
+    assert.equal(res.held, 1);
+    assert.equal(res.facts.some((f) => f.text.includes("User authorized")), false);
+
+    // Raw recall preserves full evidence on each hit
+    const hits = engine.recall("", { ns: "eng", limit: 5, adaptive: false });
+    assert.equal(hits.length, 3);
+    const { items: deduped, stats } = deduplicateRecallEvidence(hits, { foldVerbatim: true });
+    assert.equal(stats.shared_deduped, 1);
+    assert.equal(stats.verbatim_folded, 1);
+    assert.equal(stats.total_saved, 2);
+    assert.equal(hits.every((h) => h.evidence[0].text.length > 0), true);
+
+    // Hook injection deduplicates shared segment & folds verbatim evidence
+    const inj = formatRecallInjection(hits, "eng");
+    assert.equal(inj.split(sharedSeg).length - 1, 1);
+    assert.equal(inj.split(verbatimSeg).length - 1, 1);
+    assert.ok(inj.includes("s0同#"));
+    assert.ok(inj.includes("s1同正文"));
+
+    // DSH tool zeromem_recall returns deduped payload and clean rendered text
+    const host = createMockCordisHost();
+    apply(host.root, { dbPath, ollamaUrl: "http://127.0.0.1:1" });
+    const tool = host.tools.get("zeromem_recall");
+    const toolRes = await tool.execute({ query: "", namespace: "eng", limit: 5, adaptive: false });
+    assert.equal(toolRes.ok, true);
+    assert.equal(toolRes.evidence_dedup_saved, 2);
+    const rendered = tool.output.render({}, toolRes)[0].text;
+    assert.equal(rendered.split(sharedSeg).length - 1, 1);
+    assert.equal(rendered.split(verbatimSeg).length - 1, 1);
+    assert.ok(rendered.includes("s0同#"));
+    assert.ok(rendered.includes("s1同正文"));
+  } finally {
+    if (prevCfg === undefined) delete process.env.ZEROMEM_DSH_CONFIG;
+    else process.env.ZEROMEM_DSH_CONFIG = prevCfg;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

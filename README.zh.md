@@ -18,13 +18,13 @@
    - **零第三方运行时依赖、零 `postinstall` 编译脚本**，完美兼容 `pnpm >= 10` 默认安全策略，秒装即用。
    - **100% Fail-Open 容错**：即使本地 Ollama 或云端 API 离线，也绝不阻塞 DSH 启动与正常对话，历史记忆本地 FTS5 检索始终可用。
 
-2. **证据绑定 + 写前原文对照审校（拒绝黑盒幻觉）**
-   - 内置**短窗切块 → 结构化抽取 → 1 轮原文对照审校（Admission）→ 确定性规则守卫**双阶段流水线，针对开源 4B 记忆专项微调模型 **[Qwen3.5-4B-Memory-V2](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)** 深度打磨（通过 Ollama 100% 离线运行，写入 ¥0 云端费）。
-   - 每一条入库事实均**强制绑定原始证据片段**（`evidence_ids`），随时可回溯原文核对，避免摘要漂移与无中生有。
+2. **证据绑定 + 纯净原生写前审校（拒绝黑盒幻觉）**
+   - 内置**短窗切块 → 结构化抽取 → 纯净原生 3 字段审校（含空转 `revise` 转 `hold` 拦截）→ 确定性规则守卫**解耦流水线，针对开源 4B 记忆专项微调模型 **[Qwen3.5-4B-Memory-V2](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)** 深度打磨（通过 Ollama 100% 离线运行，写入 ¥0 云端费）。
+   - 每一条入库事实均**强制绑定原始证据片段**（`evidence_ids`），随时可回溯原文核对，避免摘要漂移与无中生有；在自动注入与工具返回渲染层会对共享 `(doc_id, seg_id)` 原文段去重并对已逐字包含在事实正文内的原文段折叠为紧凑引用（底层 `hit.evidence` 保持完整无损）。
    - **离开本机前自动密钥脱敏**：常见密钥与凭据（`sk-...`、`ghp_...`、`AKIA...`、`Bearer ...` 等）在送往模型与写入数据库前自动替换为 `[REDACTED]`，切换云端 API 时同样受保护。
 
-3. **面向长周期演进的时间线演化与记忆治理机制**
-   - **时间线演化与替代链（`fact_supersessions`）**：写前自动经 `<1ms` 同空间 FTS5 召回相关活跃旧事实（`prior_facts`），结合 Ollama JSON Schema 约束在单轮审校内安全标出 `supersedes_fact_id`；召回时活跃事实自动优先于被替代历史事实排序，同时完整保留历史可溯源链。
+3. **面向长周期演进的门控时间线演化与记忆治理机制**
+   - **门控独立时间线替代链（`fact_supersessions`）**：写前审校保持 100% 原生 3 字段无污染；仅对通过审校与规则守卫且含显式状态变更/迁移线索、并通过词元重叠与模板复读过滤的极少数事实，才发起轻量独立替代链判定（`num_predict=128` + JSON Schema 约束），召回时活跃事实自动优先于被替代历史事实排序，同时完整保留历史可溯源链。
    - **事件时间区间过滤（`occurred_from` / `occurred_to`）**：支持 `YYYY`、`YYYY-MM`、`YYYY-MM-DD` 区间重叠检索与 `include_superseded` 控制，覆盖引擎、`zeromem_recall` 工具、Web 工作台与 CLI。
    - **`until:YYYY-MM-DD` 过期自动后移**：严格日历校验临时规则/阶段性计划，过期记录无损后移至召回尾部并附带结构化过期标记，不污染当前有效记忆。
    - **`2–8` 动态相对分数门槛**：按头名相关性比值（默认 `0.35`，可开关）自动截断尾部低相关噪音，减少无效上下文占用。
@@ -41,7 +41,13 @@
 6. **DSH 原生闭环、命令行工具 & 跨工具数据库互通**
    - **5 个原生 DSH 工具**（严格无损 JSON）：`zeromem_recall`（支持 `occurred_from` / `occurred_to` / `include_superseded`）、`zeromem_remember`（支持 `link_supersessions`）、`zeromem_stats`、`zeromem_evict`、`zeromem_restore`。
    - **会话生命周期自动闭环**（均支持热开关）：`agent/pre-step`（发消息前 `<1ms` 带防回环标记自动召回）与 `agent/turn-stopping`（每轮结束后后台异步沉淀，自动跳过 subagent）。
-   - **与 Python 版 ZeroMem 100% 数据互通**：共用同一份 `~/.zeromem/memory.db`（`schema_version = 1`，完整互通 `fact_supersessions` 与 `evicted_records`），与 [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) 在 DSH、Cursor、Claude Code、Codex 之间无缝共享同一套本地记忆库。
+   - **与 Python 版 ZeroMem 100% 数据互通**：共用同一份 `~/.zeromem/memory.db`（`schema_version = 1`、`SCHEMA_SIG = 42e7ab99494de6a6b4e88eb2`、`APP_FORMAT_ID = 0x494D4C4C`，完整互通 `fact_supersessions` 与 `evicted_records`），与 [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem) 在 DSH、Cursor、Claude Code、Codex 之间无缝共享同一套本地记忆库。
+
+### v0.2.1 升级实证摘要（5.2 万字受控消融复测）
+与 Python ZeroMem v0.2.1 保持 100% 同构的三项引擎修复（纯净原生验收 + 门控独立替代链、空转 `revise` 拦截转 `hold`、召回共享/同文原文段去重折叠），在 71 篇合成工程文档（51,947 字）× 12 题四档消融复测中（本机 `Qwen3.5-4B-Memory-V2` 写入云端费 `¥0` + `deepseek-flash` 真机盲测 + 560 唯一事实规则∪裁判全库审计）：
+- **入库保真与安全**：确定性规则缺陷率 `1.07% → 0.00%`（`0/368`），先验模板泄漏（规则/裁判）双归零（`4/6 → 0/0`），全库联合错误率 `8.31% → 6.79%`（相对无验收抽取降 `-29.6%`）；云端明文密钥外泄维持 `0`（对照未脱敏裸搜/抽取档均为 `8` 次）。
+- **替代链精准度**：71 篇仅 `5` 篇触发轻量门控调用，假阳性边骤降 `-83.3%`（`12 → 3`，含核心架构反转真阳），直接带动 10 道有答案题 Top-1 命中率由 `9/10` 回升至 `10/10 (100%)`。
+- **上下文瘦身**：12/12 题注入上下文字符全线下降（均值 `-17.0%`），11 道单步题云端输入 Token 实省 `-13.9%`（全 12 题相对全量历史注入省 `94.6%`）。完整消融对照表与双语高清图表见 [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem)。
 
 ---
 

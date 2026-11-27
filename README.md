@@ -18,13 +18,13 @@
    - Zero third-party runtime dependencies and zero `postinstall` build scripts — installs cleanly under `pnpm >= 10`.
    - **100% Fail-Open**: even if Ollama or your cloud API is offline, DSH startup and chat are never blocked and local FTS5 search remains available.
 
-2. **Evidence-Grounded Extraction + Pre-Write Admission Verification**
-   - Uses a two-stage pipeline (**short-window chunking → structured extraction → 1-round source-grounded admission check → deterministic guard**) tuned for the open-source 4B specialist model **[Qwen3.5-4B-Memory-V2](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)** (runs 100% locally via Ollama at $0 cloud cost).
-   - Every stored fact remains **hard-bound to original evidence segments** (`evidence_ids`), eliminating black-box drift and allowing instant verification against the source text.
+2. **Evidence-Grounded Extraction + Pure Native Pre-Write Admission**
+   - Uses a decoupled pipeline (**short-window chunking → structured extraction → pure native 3-field admission check with no-op `revise` isolation → deterministic guard**) tuned for the open-source 4B specialist model **[Qwen3.5-4B-Memory-V2](https://huggingface.co/IMLIULIAN/qwen3.5-4b-memory-v2)** (runs 100% locally via Ollama at $0 cloud cost).
+   - Every stored fact remains **hard-bound to original evidence segments** (`evidence_ids`), eliminating black-box drift and allowing instant verification against the source text. At injection/tool rendering time, shared `(doc_id, seg_id)` evidence segments are deduplicated and verbatim-contained segments are folded into compact references without altering lossless underlying `hit.evidence`.
    - **Automatic Pre-Send Credential Redaction**: common secrets (`sk-...`, `ghp_...`, `AKIA...`, `Bearer ...`, etc.) are masked to `[REDACTED]` *before* extraction or storage — including when using external APIs.
 
-3. **Long-Horizon Memory Governance & Timeline Evolution (Anti-Decay & Reversible)**
-   - **Timeline Evolution & Supersession Lineage (`fact_supersessions`)**: During pre-write admission, ZeroMem recalls relevant active facts in the same namespace via `<1ms` FTS5 and links replacements (`supersedes_fact_id` / `superseded_by`) using Ollama JSON Schema constraints—ranking active facts ahead of superseded history while keeping full auditability.
+3. **Long-Horizon Memory Governance & Gated Timeline Evolution (Anti-Decay & Reversible)**
+   - **Gated Standalone Timeline Supersession (`fact_supersessions`)**: Rather than polluting pre-write admission with out-of-distribution `prior_facts`, ZeroMem runs a lightweight standalone supersession pass (`num_predict=128`, JSON Schema constrained) *only* on admitted facts carrying explicit state-change/migration cues that pass token-overlap and boilerplate-echo filters—ranking active facts ahead of superseded history while keeping full auditability.
    - **Event Time Interval Filtering (`occurred_from` / `occurred_to`)**: Filter memories by `YYYY`, `YYYY-MM`, or `YYYY-MM-DD` event windows (`occurred_from`, `occurred_to`, `include_superseded`) across the engine, `zeromem_recall` tool, Web workbench, and CLI.
    - **Time-Expiry Demotion (`until:YYYY-MM-DD`)**: expired temporary rules/plans are strictly calendar-validated and non-destructively demoted to the tail of search results instead of polluting active context.
    - **Adaptive `2–8` Relative-Score Gating**: dynamically trims low-relevance tail noise based on relative BM25 score ratio (`0.35`, toggleable).
@@ -41,7 +41,13 @@
 6. **Native DSH Integration, CLI & Cross-Tool Interop**
    - **5 Native DSH Tools** (strict lossless JSON): `zeromem_recall` (with `occurred_from` / `occurred_to` / `include_superseded`), `zeromem_remember` (with `link_supersessions`), `zeromem_stats`, `zeromem_evict`, `zeromem_restore`.
    - **Automatic Session Lifecycle Hooks** (live-toggleable): `agent/pre-step` (`<1ms` recall with anti-loop markers) and `agent/turn-stopping` (non-blocking background extraction, automatically skips subagents).
-   - **Shared Database with Python ZeroMem**: reads and writes the exact same `~/.zeromem/memory.db` (`schema_version = 1`, including `fact_supersessions` and `evicted_records`) as [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem), sharing local memory seamlessly across DSH, Cursor, Claude Code, and Codex.
+   - **Shared Database with Python ZeroMem**: reads and writes the exact same `~/.zeromem/memory.db` (`schema_version = 1`, `SCHEMA_SIG = 42e7ab99494de6a6b4e88eb2`, `APP_FORMAT_ID = 0x494D4C4C`, including `fact_supersessions` and `evicted_records`) as [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem), sharing local memory seamlessly across DSH, Cursor, Claude Code, and Codex.
+
+### Verified v0.2.1 Upgrade Highlights (52k-Char Controlled Ablation)
+Sharing the exact same engine logic and database contract with Python ZeroMem v0.2.1, the three v0.2.1 upgrades (pure native admission + gated standalone supersession, no-op `revise` → `hold` isolation, and recall evidence deduplication/folding) were verified on a controlled 52k-char (71 docs × 12 Qs) ablation benchmark (`Qwen3.5-4B-Memory-V2` local write at ¥0 + live `deepseek-flash`, 560 unique facts audited by rules ∪ judge):
+- **Fact Integrity**: deterministic rule defects `1.07% -> 0.00%` (`0/368`), prior template leaks `4/6 -> 0/0`, full-DB combined error rate `8.31% -> 6.79%` (`-29.6%` vs raw 4B extraction), plaintext cloud secret leaks `0` (vs `8` on raw FTS5 / unguarded tiers).
+- **Timeline Precision**: only `5/71` docs triggered the gated supersession pass, cutting false-positive edges by `-83.3%` (`12 -> 3` including the core reversal TP) and restoring Top-1 hit rate from `9/10` to `10/10` (`100%`).
+- **Context Compactness**: rendered context characters dropped on `12/12` questions (`-17.0%` avg), cutting single-step cloud input tokens by `-13.9%` (`-94.6%` vs full-context stuffing across all 12 Qs). Full tables and bilingual charts are available in [IMLIULIAN/zeromem](https://github.com/IMLIULIAN/zeromem).
 
 ---
 
